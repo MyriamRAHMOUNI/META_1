@@ -1,26 +1,11 @@
 #!/bin/bash
 
-'''Ecrivez un programme bash qui :
-Pour chaque paire de fichier (R1 et R2):
-1. Reportez les distributions de qualités avant et après filtrage qualité à l’aide de ​ fastqc​ :
-http://www.bioinformatics.babraham.ac.uk/projects/fastqc/fastqc_v0.11.8.zip
-2. Filtrer (trim) les reads appariés à l’aide d’Alientrimmer selon un Q20 et les séquences
-dites “alien” fournies avec les séquences (databases/contaminants.fasta).
-3. Puis fusionne ces reads à l’aide Vsearch (Paired-end reads merging) et sort un fichier au
-format fasta
-Il est ​ impératif​ à cette étape d’ajouter un ​ suffix​ à chaque read telle que:
-@.... ;sample=nom d’échantillon;Par exemple
-;sample=1ng-25cycles-1;
-Cela permettra d’associer à chaque read - un échantillon et sera important pour la quantification
-des OTU dans les échantillons.'''
-
 cd soft
 ./JarMaker.sh AlienTrimmer.java #ca permet de créer le AlienTrimmer.jar
 java -jar AlienTrimmer.jar
 cd ..
 
-mkdir Cleaning-Trimming-R1-outputs
-mkdir Cleaning-Trimming-R2-outputs
+mkdir Cleaning-Trimming-outputs
 
 gunzip *.gz
 
@@ -30,7 +15,37 @@ nameR1="$i";
 echo $nameR1;
 nameR2=$(echo $i | sed s/R1/R2/g);
 echo $nameR2;
+
 #fastqc $nameR1 $nameR2
-java -jar ./soft/AlienTrimmer.jar -if $nameR1 -ir $nameR2 -c ./databases/contaminants.fasta -q 20 -of ./Cleaning-Trimming-R1-outputs/$(basename $nameR1) -or ./Cleaning-Trimming-R2-outputs/$(basename $nameR2)
-done 
+java -jar ./soft/AlienTrimmer.jar -if $nameR1 -ir $nameR2 -c ./databases/contaminants.fasta -q 20 -of ./Cleaning-Trimming-outputs/$(basename $nameR1) -or ./Cleaning-Trimming-outputs/$(basename $nameR2)
+done
+
+#Merging
+
+mkdir vsearch_outputs
+
+for i in $(ls Cleaning-Trimming-outputs/*_R1.fastq);do
+vsearch --fastq_mergepairs $i --reverse ${i:0:-9}"_R2.fastq" --fastqout ./vsearch_outputs/$(basename ${i:0:-9})".fasta" --label_suffix $(basename ${i:0:-9})
+done
+
+for i in $(ls vsearch_outputs/*.fasta);do
+cat $i | sed -e 's/ //g' > vsearch_outputs/amplicon.fasta
+done
+
+#les 4 étapes de la clusterisation
+
+vsearch --derep_fulllength ./vsearch_outputs/amplicon.fasta --sizeout --minuniquesize 10 --output ./vsearch_outputs/amplicon_dedupliq.fasta
+
+vsearch --uchime_denovo ./vsearch_outputs/amplicon.fasta --nonchimeras  ./vsearch_outputs/amplicon_nonchimeras.fasta
+
+vsearch --id 0.97 --cluster_size ./vsearch_outputs/amplicon_nonchimeras.fasta --centroids ./vsearch_outputs/centroids.fasta --relabel "OTU_"
+
+vsearch --usearch_global ./vsearch_outputs/amplicon_nonchimeras.fasta  --otutabout  ./vsearch_outputs/merged_otutabout --db ./vsearch_outputs/centroids.fasta --id 0.97
+
+#annotation
+
+vsearch --usearch_global ./vsearch_outputs/centroids.fasta --db ./databases/mock_16S_18S.fasta --id 0.90 --top_hits_only --userfields query+target --userout ./vsearch_outputs/OTU_annotation.txt
+
+
+
 
