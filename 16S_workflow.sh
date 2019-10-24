@@ -47,5 +47,3 @@ vsearch --usearch_global ./vsearch_outputs/amplicon_nonchimeras.fasta  --otutabo
 vsearch --usearch_global ./vsearch_outputs/centroids.fasta --db ./databases/mock_16S_18S.fasta --id 0.90 --top_hits_only --userfields query+target --userout ./vsearch_outputs/OTU_annotation.txt
 
 
-
-
